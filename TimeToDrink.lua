@@ -1,5 +1,5 @@
 --[[--------------------------------------------------------------------
-  Time To Drink  -  Turtle WoW (vanilla 1.12) addon   v1.0
+  Time To Drink  -  Turtle WoW (vanilla 1.12) addon   v1.1
   Watches a chosen healer's mana while you are in a 5-man party
   (disabled in raids) and announces in party chat when they drop
   below a configurable threshold, repeating on an adjustable cooldown.
@@ -189,7 +189,8 @@ local function TTD_CreateUI()
     local f = CreateFrame("Frame", "TimeToDrinkUI", UIParent)
     f:SetWidth(260)
     f:SetHeight(232)
-    if TTD.pos then
+    f:SetClampedToScreen(true)
+    if TTD.pos and TTD.pos.point and TTD.pos.relPoint and TTD.pos.x and TTD.pos.y then
         f:SetPoint(TTD.pos.point, UIParent, TTD.pos.relPoint, TTD.pos.x, TTD.pos.y)
     else
         f:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
@@ -439,8 +440,34 @@ SlashCmdList["TIMETODRINK"] = function(arg)
         return
     end
 
+    if cmd == "reset" then
+        TTD.pos = nil
+        local ok, e = pcall(function()
+            TTD_CreateUI()
+            TimeToDrinkUI:ClearAllPoints()
+            TimeToDrinkUI:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
+            TimeToDrinkUI:Show()
+        end)
+        if ok then msg("window reset to center of screen.") else err(e) end
+        return
+    end
+
+    if cmd == "enable" then
+        TTD.disabled = false
+        if TimeToDrinkDisableCheck then TimeToDrinkDisableCheck:SetChecked(false) end
+        msg("alerts ENABLED (pick a healer to activate).")
+        return
+    end
+
+    if cmd == "disable" then
+        TTD.disabled = true
+        if TimeToDrinkDisableCheck then TimeToDrinkDisableCheck:SetChecked(true) end
+        msg("alerts DISABLED (muted).")
+        return
+    end
+
     local ok, e = pcall(TTD_ToggleUI)
     if not ok then err(e) end
 end
 
-msg("loaded v1.7. /ttd to open, /ttd status, /ttd test. (5-man parties only)")
+msg("loaded v1.8. /ttd open, /ttd reset, /ttd enable, /ttd disable, /ttd status. (5-man parties only)")
