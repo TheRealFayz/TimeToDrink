@@ -15,6 +15,9 @@ INSTALL
 
 COMMANDS
   /ttd          open / close the window
+  /ttd enable   turn alerts on  (unmute)
+  /ttd disable  turn alerts off (mute)
+  /ttd reset    recenter the window and show it
   /ttd status   print current threshold, cooldown, healer, and party state
   /ttd test     send a test line to party chat (only works while in a party)
   /ttd debug    toggle verbose messages (announces show up in your own chat)
