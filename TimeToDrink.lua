@@ -27,6 +27,8 @@ TTD.initialized    = false
 TTD.disabled       = false
 TTD.locked         = false
 TTD.pos            = nil
+TTD.mmbAngle       = 200
+TTD.mmbHidden      = false
 
 local MIN_COOLDOWN  = 10
 local POLL_INTERVAL = 0.5
@@ -39,6 +41,10 @@ local function dbg(text)
 end
 local function err(text)
     DEFAULT_CHAT_FRAME:AddMessage("|cffff4040TTD error:|r " .. tostring(text))
+end
+
+function TTD_SaveHealer()
+    if type(TimeToDrinkDB) == "table" then TimeToDrinkDB.healer = TTD.selectedHealer end
 end
 
 local function TTD_InFivePlayerParty()
@@ -106,6 +112,7 @@ function TTD_InitHealerDropdown()
             info.value = nm
             info.func  = function()
                 TTD.selectedHealer = nm
+                TTD_SaveHealer()
                 local t = getglobal("TimeToDrinkHealerDropdownText")
                 if t then t:SetText(nm) end
                 dbg("healer set to " .. nm)
@@ -187,8 +194,8 @@ local function TTD_CreateUI()
     if TimeToDrinkUI then return end
 
     local f = CreateFrame("Frame", "TimeToDrinkUI", UIParent)
-    f:SetWidth(260)
-    f:SetHeight(232)
+    f:SetWidth(172)
+    f:SetHeight(200)
     f:SetClampedToScreen(true)
     if TTD.pos and TTD.pos.point and TTD.pos.relPoint and TTD.pos.x and TTD.pos.y then
         f:SetPoint(TTD.pos.point, UIParent, TTD.pos.relPoint, TTD.pos.x, TTD.pos.y)
@@ -213,11 +220,11 @@ local function TTD_CreateUI()
     f:Hide()
 
     local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    title:SetPoint("TOP", f, "TOP", 0, -16)
+    title:SetPoint("TOP", f, "TOP", 0, -14)
     title:SetText("Time To Drink")
 
     local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
-    close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -6, -6)
+    close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -5, -5)
 
     local lock = CreateFrame("Button", "TimeToDrinkLockButton", f)
     lock:SetWidth(24); lock:SetHeight(24)
@@ -228,13 +235,23 @@ local function TTD_CreateUI()
     end)
     TTD_UpdateLockVisual()
 
+    -- Healer selector
+    local hl = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    hl:SetPoint("TOPLEFT", f, "TOPLEFT", 18, -38)
+    hl:SetText("Healer")
+
+    local dd = CreateFrame("Frame", "TimeToDrinkHealerDropdown", f, "UIDropDownMenuTemplate")
+    dd:SetPoint("TOPLEFT", hl, "BOTTOMLEFT", -16, -2)
+
+    -- Threshold row
     local tl = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    tl:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -46)
-    tl:SetText("Mana threshold (1-100%)")
+    tl:SetWidth(60); tl:SetJustifyH("LEFT")
+    tl:SetPoint("TOPLEFT", f, "TOPLEFT", 18, -84)
+    tl:SetText("Alert below")
 
     local te = CreateFrame("EditBox", "TimeToDrinkThresholdEdit", f, "InputBoxTemplate")
-    te:SetWidth(50); te:SetHeight(20)
-    te:SetPoint("TOPLEFT", tl, "BOTTOMLEFT", 4, -4)
+    te:SetWidth(38); te:SetHeight(18)
+    te:SetPoint("LEFT", tl, "RIGHT", 2, 0)
     te:SetAutoFocus(false)
     te:SetMaxLetters(3)
     te:SetText("" .. TTD.threshold)
@@ -251,13 +268,19 @@ local function TTD_CreateUI()
     te:SetScript("OnEnterPressed", commitThreshold)
     te:SetScript("OnEditFocusLost", commitThreshold)
 
+    local tu = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    tu:SetPoint("LEFT", te, "RIGHT", 6, 0)
+    tu:SetText("% mana")
+
+    -- Cooldown row
     local cl = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    cl:SetPoint("TOPLEFT", tl, "TOPLEFT", 120, 0)
-    cl:SetText("Cooldown (min 10s)")
+    cl:SetWidth(60); cl:SetJustifyH("LEFT")
+    cl:SetPoint("TOPLEFT", tl, "BOTTOMLEFT", 0, -14)
+    cl:SetText("Repeat every")
 
     local ce = CreateFrame("EditBox", "TimeToDrinkCooldownEdit", f, "InputBoxTemplate")
-    ce:SetWidth(50); ce:SetHeight(20)
-    ce:SetPoint("TOPLEFT", cl, "BOTTOMLEFT", 4, -4)
+    ce:SetWidth(38); ce:SetHeight(18)
+    ce:SetPoint("LEFT", cl, "RIGHT", 2, 0)
     ce:SetAutoFocus(false)
     ce:SetMaxLetters(4)
     ce:SetText("" .. TTD.cooldown)
@@ -274,31 +297,30 @@ local function TTD_CreateUI()
     ce:SetScript("OnEnterPressed", commitCooldown)
     ce:SetScript("OnEditFocusLost", commitCooldown)
 
-    local hl = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    hl:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -104)
-    hl:SetText("Healer")
+    local cu = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    cu:SetPoint("LEFT", ce, "RIGHT", 6, 0)
+    cu:SetText("sec")
 
-    local dd = CreateFrame("Frame", "TimeToDrinkHealerDropdown", f, "UIDropDownMenuTemplate")
-    dd:SetPoint("TOPLEFT", hl, "BOTTOMLEFT", -16, -4)
-
+    -- Mute toggle
     local cb = CreateFrame("CheckButton", "TimeToDrinkDisableCheck", f, "UICheckButtonTemplate")
-    cb:SetWidth(22); cb:SetHeight(22)
-    cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -150)
+    cb:SetWidth(20); cb:SetHeight(20)
+    cb:SetPoint("TOPLEFT", f, "TOPLEFT", 18, -128)
     local cbText = getglobal("TimeToDrinkDisableCheckText")
-    if cbText then cbText:SetText("Disable alerts (quiet mode)") end
+    if cbText then cbText:SetText("Mute alerts") end
     cb:SetChecked(TTD.disabled)
     cb:SetScript("OnClick", function()
         if this:GetChecked() then TTD.disabled = true else TTD.disabled = false end
         dbg("disabled = " .. tostring(TTD.disabled))
     end)
 
+    -- Live readout + status
     local readout = f:CreateFontString("TimeToDrinkReadout", "OVERLAY", "GameFontNormalSmall")
-    readout:SetPoint("TOPLEFT", f, "TOPLEFT", 24, -182)
+    readout:SetPoint("TOPLEFT", f, "TOPLEFT", 20, -152)
     readout:SetText("Healer mana: (none selected)")
 
     local status = f:CreateFontString("TimeToDrinkStatus", "OVERLAY", "GameFontDisableSmall")
-    status:SetPoint("BOTTOM", f, "BOTTOM", 0, 14)
-    status:SetText("Type numbers, pick a healer, press Enter.")
+    status:SetPoint("BOTTOM", f, "BOTTOM", 0, 12)
+    status:SetText("Pick a healer to activate alerts.")
 end
 
 function TTD_ShowUI()
@@ -359,11 +381,27 @@ driver:SetScript("OnEvent", function()
         if TimeToDrinkDB.disabled ~= nil then TTD.disabled = TimeToDrinkDB.disabled end
         if TimeToDrinkDB.locked ~= nil then TTD.locked = TimeToDrinkDB.locked end
         if TimeToDrinkDB.pos then TTD.pos = TimeToDrinkDB.pos end
+        if TimeToDrinkDB.mmbAngle then TTD.mmbAngle = TimeToDrinkDB.mmbAngle end
+        if TimeToDrinkDB.mmbHidden ~= nil then TTD.mmbHidden = TimeToDrinkDB.mmbHidden end
+        TTD_CreateMinimapButton()
+        TTD_UpdateMinimapButtonPosition()
+        if TimeToDrinkMinimapButton then
+            if TTD.mmbHidden then TimeToDrinkMinimapButton:Hide() else TimeToDrinkMinimapButton:Show() end
+        end
 
     elseif event == "PLAYER_ENTERING_WORLD" then
         TTD.inWorld = true
         if not TTD.initialized then
             TTD.wasInParty = TTD_InFivePlayerParty()
+            -- Restore the saved healer only if still grouped with them
+            -- (covers reload / reconnect). A genuine new party clears it on join.
+            if type(TimeToDrinkDB) == "table" and TimeToDrinkDB.healer
+               and TTD_InFivePlayerParty() and TTD_UnitForName(TimeToDrinkDB.healer) then
+                TTD.selectedHealer = TimeToDrinkDB.healer
+            else
+                TTD.selectedHealer = nil
+                TTD_SaveHealer()
+            end
             TTD.initialized = true
         end
 
@@ -374,6 +412,9 @@ driver:SetScript("OnEvent", function()
         TimeToDrinkDB.disabled  = TTD.disabled
         TimeToDrinkDB.locked    = TTD.locked
         TimeToDrinkDB.pos       = TTD.pos
+        TimeToDrinkDB.healer    = TTD.selectedHealer
+        TimeToDrinkDB.mmbAngle  = TTD.mmbAngle
+        TimeToDrinkDB.mmbHidden = TTD.mmbHidden
 
     elseif event == "CHAT_MSG_PARTY" or event == "CHAT_MSG_PARTY_LEADER" then
         -- If anyone (any client) posts the low-mana alert, start our cooldown too,
@@ -391,9 +432,11 @@ driver:SetScript("OnEvent", function()
            and TTD.wasInParty and TTD_InFivePlayerParty() then
             SendChatMessage("The healer has left the party, please designate a new healer, or mute the addon.", "PARTY")
         end
+        if prevHealer and not TTD.selectedHealer then TTD_SaveHealer() end
         -- On joining a fresh party, require the player to pick a healer again.
         if TTD.inWorld and inParty and not TTD.wasInParty then
             TTD.selectedHealer = nil
+            TTD_SaveHealer()
             local ok, e = pcall(TTD_ShowUI)
             if not ok then err(e) end
         end
@@ -411,6 +454,70 @@ driver:SetScript("OnUpdate", function()
     if TimeToDrinkUI and TimeToDrinkUI:IsShown() then TTD_UpdateReadout() end
     TTD_CheckHealer()
 end)
+
+-- ===== Minimap button (Morning Glory Dew icon, item 8766) =====
+function TTD_UpdateMinimapButtonPosition()
+    local btn = TimeToDrinkMinimapButton
+    if not btn then return end
+    local rad = (TTD.mmbAngle or 200) * math.pi / 180
+    btn:ClearAllPoints()
+    btn:SetPoint("CENTER", Minimap, "CENTER", math.cos(rad) * 80, math.sin(rad) * 80)
+end
+
+function TTD_MinimapButtonDragUpdate()
+    local mx, my = Minimap:GetCenter()
+    local scale = Minimap:GetEffectiveScale()
+    local px, py = GetCursorPosition()
+    if not (mx and px and scale) then return end
+    px = px / scale
+    py = py / scale
+    TTD.mmbAngle = math.deg(math.atan2(py - my, px - mx))
+    TTD_UpdateMinimapButtonPosition()
+end
+
+function TTD_CreateMinimapButton()
+    if TimeToDrinkMinimapButton then return end
+    if not Minimap then return end
+
+    local btn = CreateFrame("Button", "TimeToDrinkMinimapButton", Minimap)
+    btn:SetWidth(31); btn:SetHeight(31)
+    btn:SetFrameStrata("MEDIUM")
+    btn:SetFrameLevel(8)
+    btn:EnableMouse(true)
+    btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    btn:RegisterForDrag("LeftButton")
+
+    local icon = btn:CreateTexture(nil, "BACKGROUND")
+    icon:SetWidth(20); icon:SetHeight(20)
+    icon:SetPoint("TOPLEFT", btn, "TOPLEFT", 6, -6)
+    local tex = nil
+    if GetItemIcon then tex = GetItemIcon(8766) end
+    icon:SetTexture(tex or "Interface\\Icons\\INV_Drink_10")
+
+    local border = btn:CreateTexture(nil, "OVERLAY")
+    border:SetWidth(53); border:SetHeight(53)
+    border:SetPoint("TOPLEFT", btn, "TOPLEFT", 0, 0)
+    border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+
+    btn:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+
+    btn:SetScript("OnClick", function() TTD_ToggleUI() end)
+    btn:SetScript("OnDragStart", function() this:SetScript("OnUpdate", TTD_MinimapButtonDragUpdate) end)
+    btn:SetScript("OnDragStop", function()
+        this:SetScript("OnUpdate", nil)
+        if type(TimeToDrinkDB) == "table" then TimeToDrinkDB.mmbAngle = TTD.mmbAngle end
+    end)
+    btn:SetScript("OnEnter", function()
+        GameTooltip:SetOwner(this, "ANCHOR_LEFT")
+        GameTooltip:AddLine("Time To Drink")
+        GameTooltip:AddLine("Click to open. Drag to move.", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    TTD_UpdateMinimapButtonPosition()
+    if TTD.mmbHidden then btn:Hide() end
+end
 
 SLASH_TIMETODRINK1 = "/ttd"
 SLASH_TIMETODRINK2 = "/timetodrink"
@@ -466,8 +573,19 @@ SlashCmdList["TIMETODRINK"] = function(arg)
         return
     end
 
+    if cmd == "minimap" then
+        TTD.mmbHidden = not TTD.mmbHidden
+        TTD_CreateMinimapButton()
+        if TimeToDrinkMinimapButton then
+            if TTD.mmbHidden then TimeToDrinkMinimapButton:Hide() else TimeToDrinkMinimapButton:Show() end
+        end
+        if type(TimeToDrinkDB) == "table" then TimeToDrinkDB.mmbHidden = TTD.mmbHidden end
+        msg("minimap button " .. (TTD.mmbHidden and "hidden" or "shown"))
+        return
+    end
+
     local ok, e = pcall(TTD_ToggleUI)
     if not ok then err(e) end
 end
 
-msg("loaded v1.8. /ttd open, /ttd reset, /ttd enable, /ttd disable, /ttd status. (5-man parties only)")
+msg("loaded v1.10. /ttd open, /ttd reset, /ttd enable, /ttd disable, /ttd minimap, /ttd status. (5-man parties only)")
